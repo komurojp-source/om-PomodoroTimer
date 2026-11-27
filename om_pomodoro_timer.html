@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f172a">
+  <title>時報 ＆ パターン対応ポモドーロタイマー</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      min-height: 100dvh;
+      overscroll-behavior-y: contain;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 8px;
+      border-radius: 9999px;
+      background: #334155;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #0f172a;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #0f172a;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+    .preset-btn {
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 flex flex-col items-center justify-start p-3 sm:p-6">
+
+  <!-- メインコンテナ -->
+  <div id="appContainer" class="w-full max-w-md bg-slate-800/90 border border-slate-700/80 rounded-3xl shadow-2xl p-4 sm:p-5 flex flex-col gap-3.5 transition-all">
+
+    <!-- ヘッダー：ステータス & 表示モード切替 -->
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0"></span>
+        <span id="labelStatus" class="text-sm font-bold text-slate-400 truncate">停止中</span>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button id="btnWakeLock" type="button" title="画面スリープ防止" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-700/70 text-slate-300 hover:bg-slate-700 transition flex items-center gap-1">
+          <span id="wakeLockIcon">🌙</span>
+          <span id="wakeLockText" class="hidden sm:inline">スリープ通常</span>
+        </button>
+        <button id="btnToggleCompact" type="button" title="表示サイズ切替" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-700/70 text-slate-200 hover:bg-slate-600 transition">
+          ◼ ミニ表示
+        </button>
+      </div>
+    </div>
+
+    <!-- 選択中プリセット & 現在時刻（時報ステータス） -->
+    <div class="flex items-center justify-between text-xs px-1">
+      <span id="labelActivePreset" class="font-bold text-sky-400">▶ 選択中: ボタン① (5分)</span>
+      <span id="labelChimeStatus" class="text-slate-400 font-medium">🔔 時報ON</span>
+    </div>
+
+    <!-- 時計表示エリア -->
+    <div class="relative flex flex-col items-center justify-center py-4 bg-slate-900/70 rounded-2xl border border-slate-700/60">
+      <div id="labelTime" class="text-6xl sm:text-7xl font-extrabold tracking-tight tabular-nums text-white select-none">
+        05:00
+      </div>
+      <div id="labelCurrentClock" class="mt-1 text-xs text-slate-400 tabular-nums font-medium">
+        現在時刻 --:--:--
+      </div>
+      <!-- 進捗バー -->
+      <div class="w-4/5 h-1.5 bg-slate-700/70 rounded-full overflow-hidden mt-3">
+        <div id="progressBar" class="h-full bg-sky-400 transition-all duration-300" style="width: 100%;"></div>
+      </div>
+    </div>
+
+    <!-- コンパクトモード時のコントロール -->
+    <div id="compactControls" class="hidden flex items-center justify-center gap-3 pt-1">
+      <button id="btnCompactStart" type="button" class="flex-1 py-3 rounded-2xl font-bold text-base bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white transition shadow-lg">
+        ▶ スタート
+      </button>
+      <button id="btnCompactReset" type="button" class="px-5 py-3 rounded-2xl font-bold text-base bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white transition">
+        ⏹
+      </button>
+    </div>
+
+    <!-- フル操作エリア -->
+    <div id="fullControls" class="flex flex-col gap-3.5">
+
+      <!-- プリセットボタン ①〜④ -->
+      <div>
+        <div class="grid grid-cols-4 gap-2">
+          <button type="button" data-preset-idx="0" class="preset-btn py-2.5 px-1 rounded-xl bg-sky-600 text-white font-bold text-sm shadow transition active:scale-95">
+            ① 5分
+          </button>
+          <button type="button" data-preset-idx="1" class="preset-btn py-2.5 px-1 rounded-xl bg-slate-700 text-slate-100 font-bold text-sm hover:bg-slate-600 transition active:scale-95">
+            ② 10分
+          </button>
+          <button type="button" data-preset-idx="2" class="preset-btn py-2.5 px-1 rounded-xl bg-slate-700 text-slate-100 font-bold text-sm hover:bg-slate-600 transition active:scale-95">
+            ③ 15分
+          </button>
+          <button type="button" data-preset-idx="3" class="preset-btn py-2.5 px-1 rounded-xl bg-slate-700 text-slate-100 font-bold text-sm hover:bg-slate-600 transition active:scale-95">
+            ④ 30分
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1.5 text-center">
+          タップで選択 ／ 長押しでスライダーの分数を登録
+        </p>
+      </div>
+
+      <!-- スライダー ＋ セットボタン -->
+      <div class="flex items-center gap-3 bg-slate-900/50 px-3 py-2.5 rounded-2xl border border-slate-700/50">
+        <input id="sliderMinutes" type="range" min="1" max="60" value="5" class="flex-1">
+        <span id="sliderValueLabel" class="text-sm font-bold text-sky-300 tabular-nums w-10 text-right">5分</span>
+        <button id="btnSavePreset" type="button" class="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 text-xs font-bold text-slate-100 transition shrink-0">
+          💾 セット
+        </button>
+      </div>
+
+      <!-- パターン再生モード設定 -->
+      <div class="bg-slate-900/50 rounded-2xl border border-slate-700/50 p-3 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-300 tracking-wide">再生モード設定</span>
+        </div>
+
+        <div class="flex items-center justify-between gap-2 text-sm">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input id="chkPattern" type="checkbox" class="w-4 h-4 rounded accent-sky-500">
+            <span class="font-semibold text-slate-200 text-xs sm:text-sm">パターン再生を有効化</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input id="chkLoop" type="checkbox" checked class="w-4 h-4 rounded accent-sky-500">
+            <span class="font-semibold text-slate-200 text-xs sm:text-sm">無限ループ</span>
+          </label>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <label for="entryPattern" class="text-xs font-bold text-slate-300 shrink-0">順序:</label>
+          <input id="entryPattern" type="text" value="4, 1, 4, 1, 4, 3" placeholder="例: 4, 1, 4, 1, 4, 3"
+            class="flex-1 min-w-0 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-sky-400 disabled:opacity-40">
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold text-slate-300 shrink-0">保存済み:</span>
+          <select id="comboPatterns" class="flex-1 min-w-[120px] bg-slate-800 border border-slate-600 rounded-xl px-2.5 py-2 text-xs sm:text-sm font-bold text-white focus:outline-none focus:border-sky-400 disabled:opacity-40"></select>
+          <button id="btnDeletePattern" type="button" class="px-2.5 py-2 rounded-xl bg-rose-700/90 hover:bg-rose-600 active:scale-95 text-xs font-bold text-white transition">
+            🗑️ 削除
+          </button>
+          <button id="btnSavePattern" type="button" class="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 active:scale-95 text-xs font-bold text-white transition">
+            保存/上書き
+          </button>
+        </div>
+      </div>
+
+      <!-- メイン操作ボタン -->
+      <div class="grid grid-cols-3 gap-2 pt-0.5">
+        <button id="btnStart" type="button" class="py-3.5 rounded-2xl font-bold text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white transition shadow-lg">
+          ▶ スタート
+        </button>
+        <button id="btnReset" type="button" class="py-3.5 rounded-2xl font-bold text-sm sm:text-base bg-slate-600 hover:bg-slate-500 active:scale-[0.98] text-white transition">
+          ⏹ リセット
+        </button>
+        <button id="btnSettings" type="button" class="py-3.5 rounded-2xl font-bold text-sm sm:text-base bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-slate-100 transition">
+          ⚙ 設定
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-950/95 border border-slate-700 text-slate-100 text-xs sm:text-sm font-semibold shadow-2xl opacity-0 pointer-events-none transition-opacity duration-200 max-w-[90vw] text-center">
+  </div>
+
+  <!-- 設定モーダル -->
+  <div id="settingsModal" class="fixed inset-0 z-40 hidden bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="w-full max-w-md bg-slate-800 border border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 max-h-[88dvh] overflow-y-auto flex flex-col gap-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-700 pb-3">
+        <h2 class="text-base font-bold text-white">⚙ 設定（音声・時報）</h2>
+        <button id="btnCloseSettingsTop" type="button" class="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-sm flex items-center justify-center">✕</button>
+      </div>
+
+      <!-- タイマー終了音設定 -->
+      <div class="bg-slate-900/60 rounded-2xl p-3.5 border border-slate-700/60 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-sky-400">タイマー終了音設定</span>
+          <button id="btnTestAlarm" type="button" class="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-[11px] font-bold text-slate-200">▶ テスト</button>
+        </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="radio" name="soundMode" value="default" class="accent-sky-500">
+          <span>標準チャイム音</span>
+        </label>
+        <div class="flex flex-col gap-1.5">
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="soundMode" value="file" class="accent-sky-500">
+            <span>カスタム音声ファイル</span>
+          </label>
+          <div class="flex items-center gap-2 pl-5">
+            <input id="inputAlarmFile" type="file" accept="audio/*" class="hidden">
+            <button id="btnSelectAlarmFile" type="button" class="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white shrink-0">ファイル選択</button>
+            <span id="labelAlarmFileName" class="text-xs text-slate-400 truncate">未選択</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 時報機能設定 -->
+      <div class="bg-slate-900/60 rounded-2xl p-3.5 border border-slate-700/60 flex flex-col gap-3">
+        <span class="text-xs font-bold text-sky-400">時報機能設定</span>
+
+        <label class="flex items-center gap-2 text-sm font-semibold cursor-pointer">
+          <input id="chkChimeEnabled" type="checkbox" class="w-4 h-4 rounded accent-sky-500">
+          <span>時報機能を有効にする</span>
+        </label>
+
+        <!-- 30分時報音 -->
+        <div class="flex flex-col gap-2 pl-1 border-t border-slate-700/60 pt-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-300">【30分時報音】</span>
+            <button id="btnTestHalfChime" type="button" class="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-[11px] font-bold text-slate-200">▶ テスト</button>
+          </div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="halfChimeMode" value="default" class="accent-sky-500">
+            <span>標準効果音（ポーン）</span>
+          </label>
+          <div class="flex flex-col gap-1.5">
+            <label class="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name="halfChimeMode" value="file" class="accent-sky-500">
+              <span>カスタム音声ファイル</span>
+            </label>
+            <div class="flex items-center gap-2 pl-5">
+              <input id="inputHalfFile" type="file" accept="audio/*" class="hidden">
+              <button id="btnSelectHalfFile" type="button" class="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white shrink-0">ファイル選択</button>
+              <span id="labelHalfFileName" class="text-xs text-slate-400 truncate">未選択</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 毎時0分の挙動 & 声質 -->
+        <div class="flex flex-col gap-2 pl-1 border-t border-slate-700/60 pt-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-300">【毎時0分の挙動 ＆ 声質】</span>
+            <button id="btnTestHourlyChime" type="button" class="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-[11px] font-bold text-slate-200">▶ テスト</button>
+          </div>
+          <div class="flex items-center gap-4 text-sm">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="hourlyChimeMode" value="tts" class="accent-sky-500">
+              <span>時刻読み上げ</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="hourlyChimeMode" value="half" class="accent-sky-500">
+              <span>30分時報と同じ音</span>
+            </label>
+          </div>
+
+          <label class="flex items-center gap-2 text-xs sm:text-sm cursor-pointer">
+            <input id="chkPreChime" type="checkbox" class="w-4 h-4 rounded accent-sky-500">
+            <span>読み上げ前に予告チャイムを鳴らす</span>
+          </label>
+
+          <div class="flex items-center gap-2 mt-1">
+            <label for="selectVoice" class="text-xs font-bold text-slate-300 shrink-0">声質選択:</label>
+            <select id="selectVoice" class="flex-1 min-w-0 bg-slate-800 border border-slate-600 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-sky-400"></select>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-[11px] text-slate-400 leading-relaxed">
+        ※ スマホのブラウザ仕様上、バックグラウンド時やマナーモード中は音や読み上げが制限される場合があります。
+      </p>
+
+      <button id="btnCloseSettings" type="button" class="w-full py-3 rounded-2xl bg-sky-600 hover:bg-sky-500 font-bold text-sm text-white transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- 汎用入力/確認モーダル（alert/confirm/prompt代替） -->
+  <div id="dialogModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-3xl p-5 flex flex-col gap-4 shadow-2xl">
+      <h3 id="dialogTitle" class="text-base font-bold text-white">確認</h3>
+      <p id="dialogMessage" class="text-sm text-slate-300 leading-relaxed"></p>
+      <input id="dialogInput" type="text" class="hidden w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-sky-400">
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="btnDialogCancel" type="button" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs sm:text-sm font-bold text-slate-200 transition">キャンセル</button>
+        <button id="btnDialogOk" type="button" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs sm:text-sm font-bold text-white transition">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const STORAGE_KEY = 'om_pomodoro_timer_config_v1';
+      const SYMBOLS = ['①', '②', '③', '④'];
+
+      const state = {
+        presets: [5, 10, 15, 30],
+        savedPatterns: {
+          '標準ポモドーロ': { sequence: '4, 1, 4, 1, 4, 3', snapshot_presets: [5, 10, 15, 30] },
+          'ショート': { sequence: '1, 2', snapshot_presets: [5, 10, 15, 30] }
+        },
+        selectedPresetIdx: 0,
+        selectedSeconds: 300,
+        remainingSeconds: 300,
+        targetTotalSeconds: 300,
+        isRunning: false,
+        isPaused: false,
+        endTimestamp: 0,
+
+        patternEnabled: false,
+        loopPattern: true,
+        patternInput: '4, 1, 4, 1, 4, 3',
+        selectedPatternName: '標準ポモドーロ',
+        patternSequence: [],
+        currentStepIdx: 0,
+
+        soundMode: 'default',
+        customAlarmData: '',
+        customAlarmName: '',
+        chimeEnabled: true,
+        halfChimeMode: 'default',
+        customHalfData: '',
+        customHalfName: '',
+        hourlyChimeMode: 'tts',
+        preChimeEnabled: true,
+        selectedVoice: '',
+
+        compactMode: false,
+        lastCheckedHour: -1,
+        lastCheckedHalfHour: -1
+      };
+
+      // DOM要素
+      const el = {
+        statusDot: document.getElementById('statusDot'),
+        labelStatus: document.getElementById('labelStatus'),
+        labelActivePreset: document.getElementById('labelActivePreset'),
+        labelChimeStatus: document.getElementById('labelChimeStatus'),
+        labelTime: document.getElementById('labelTime'),
+        labelCurrentClock: document.getElementById('labelCurrentClock'),
+        progressBar: document.getElementById('progressBar'),
+        btnWakeLock: document.getElementById('btnWakeLock'),
+        wakeLockIcon: document.getElementById('wakeLockIcon'),
+        wakeLockText: document.getElementById('wakeLockText'),
+        btnToggleCompact: document.getElementById('btnToggleCompact'),
+        compactControls: document.getElementById('compactControls'),
+        fullControls: document.getElementById('fullControls'),
+        btnCompactStart: document.getElementById('btnCompactStart'),
+        btnCompactReset: document.getElementById('btnCompactReset'),
+        presetBtns: Array.from(document.querySelectorAll('.preset-btn')),
+        sliderMinutes: document.getElementById('sliderMinutes'),
+        sliderValueLabel: document.getElementById('sliderValueLabel'),
+        btnSavePreset: document.getElementById('btnSavePreset'),
+        chkPattern: document.getElementById('chkPattern'),
+        chkLoop: document.getElementById('chkLoop'),
+        entryPattern: document.getElementById('entryPattern'),
+        comboPatterns: document.getElementById('comboPatterns'),
+        btnDeletePattern: document.getElementById('btnDeletePattern'),
+        btnSavePattern: document.getElementById('btnSavePattern'),
+        btnStart: document.getElementById('btnStart'),
+        btnReset: document.getElementById('btnReset'),
+        btnSettings: document.getElementById('btnSettings'),
+        toast: document.getElementById('toast'),
+
+        settingsModal: document.getElementById('settingsModal'),
+        btnCloseSettingsTop: document.getElementById('btnCloseSettingsTop'),
+        btnCloseSettings: document.getElementById('btnCloseSettings'),
+        btnTestAlarm: document.getElementById('btnTestAlarm'),
+        inputAlarmFile: document.getElementById('inputAlarmFile'),
+        btnSelectAlarmFile: document.getElementById('btnSelectAlarmFile'),
+        labelAlarmFileName: document.getElementById('labelAlarmFileName'),
+        chkChimeEnabled: document.getElementById('chkChimeEnabled'),
+        btnTestHalfChime: document.getElementById('btnTestHalfChime'),
+        inputHalfFile: document.getElementById('inputHalfFile'),
+        btnSelectHalfFile: document.getElementById('btnSelectHalfFile'),
+        labelHalfFileName: document.getElementById('labelHalfFileName'),
+        btnTestHourlyChime: document.getElementById('btnTestHourlyChime'),
+        chkPreChime: document.getElementById('chkPreChime'),
+        selectVoice: document.getElementById('selectVoice'),
+
+        dialogModal: document.getElementById('dialogModal'),
+        dialogTitle: document.getElementById('dialogTitle'),
+        dialogMessage: document.getElementById('dialogMessage'),
+        dialogInput: document.getElementById('dialogInput'),
+        btnDialogCancel: document.getElementById('btnDialogCancel'),
+        btnDialogOk: document.getElementById('btnDialogOk')
+      };
+
+      // --- オーディオ（Web Audio API）---
+      let audioCtx = null;
+      function ensureAudioContext() {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        if (!audioCtx) audioCtx = new Ctx();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+      }
+
+      function playTone(freq, durationMs, delayMs = 0, type = 'sine', volume = 0.28) {
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
+        const start = ctx.currentTime + delayMs / 1000;
+        const dur = durationMs / 1000;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + dur + 0.02);
+      }
+
+      function playDefaultChime() {
+        const notes = [
+          [1047, 150, 0],
+          [1318, 150, 160],
+          [1568, 150, 320],
+          [2093, 450, 480]
+        ];
+        notes.forEach(([f, d, delay]) => playTone(f, d, delay, 'triangle', 0.3));
+      }
+
+      function playHalfHourTone() {
+        playTone(2093, 1200, 0, 'sine', 0.25);
+      }
+
+      function playAudioData(dataUrl, fallbackFn) {
+        if (!dataUrl) {
+          fallbackFn();
+          return;
+        }
+        try {
+          const audio = new Audio(dataUrl);
+          audio.play().catch(() => fallbackFn());
+        } catch {
+          fallbackFn();
+        }
+      }
+
+      function playAlarm() {
+        if (state.soundMode === 'file' && state.customAlarmData) {
+          playAudioData(state.customAlarmData, playDefaultChime);
+        } else {
+          playDefaultChime();
+        }
+      }
+
+      function playHalfHourChime() {
+        if (state.halfChimeMode === 'file' && state.customHalfData) {
+          playAudioData(state.customHalfData, playHalfHourTone);
+        } else {
+          playHalfHourTone();
+        }
+      }
+
+      function playTimeSignal(hour) {
+        if (state.hourlyChimeMode === 'half') {
+          playHalfHourChime();
+          return;
+        }
+        const speakNow = () => {
+          const text = `${hour}時をお知らせします。`;
+          if ('speechSynthesis' in window) {
+            try {
+              window.speechSynthesis.cancel();
+              const utter = new SpeechSynthesisUtterance(text);
+              utter.lang = 'ja-JP';
+              utter.rate = 0.92;
+              const voices = window.speechSynthesis.getVoices();
+              if (state.selectedVoice) {
+                const found = voices.find(v => `${v.name} (${v.lang})` === state.selectedVoice);
+                if (found) utter.voice = found;
+              }
+              window.speechSynthesis.speak(utter);
+              return;
+            } catch {
+              // フォールバックへ
+            }
+          }
+          playTone(1568, 200, 0, 'sine', 0.25);
+          playTone(2000, 500, 240, 'sine', 0.25);
+        };
+
+        if (state.preChimeEnabled) {
+          playHalfHourChime();
+          setTimeout(speakNow, 1200);
+        } else {
+          speakNow();
+        }
+      }
+
+      // --- Wake Lock（画面スリープ防止）---
+      let wakeLockSentinel = null;
+      let wakeLockDesired = false;
+
+      async function requestWakeLock() {
+        if (!('wakeLock' in navigator)) {
+          showToast('このブラウザはスリープ防止機能に非対応です');
+          return;
+        }
+        try {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            if (!wakeLockDesired) updateWakeLockUI(false);
+          });
+          updateWakeLockUI(true);
+        } catch {
+          wakeLockDesired = false;
+          updateWakeLockUI(false);
+          showToast('画面スリープ防止を有効にできませんでした');
+        }
+      }
+
+      async function releaseWakeLock() {
+        wakeLockDesired = false;
+        if (wakeLockSentinel) {
+          try { await wakeLockSentinel.release(); } catch {}
+          wakeLockSentinel = null;
+        }
+        updateWakeLockUI(false);
+      }
+
+      function updateWakeLockUI(active) {
+        if (active) {
+          el.btnWakeLock.classList.remove('bg-slate-700/70', 'text-slate-300');
+          el.btnWakeLock.classList.add('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/40');
+          el.wakeLockIcon.textContent = '☀️';
+          el.wakeLockText.textContent = 'スリープ防止中';
+        } else {
+          el.btnWakeLock.classList.add('bg-slate-700/70', 'text-slate-300');
+          el.btnWakeLock.classList.remove('bg-amber-500/20', 'text-amber-300', 'border', 'border-amber-500/40');
+          el.wakeLockIcon.textContent = '🌙';
+          el.wakeLockText.textContent = 'スリープ通常';
+        }
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && wakeLockDesired) {
+          requestWakeLock();
+        }
+      });
+
+      // --- トースト & ダイアログ ---
+      let toastTimer = null;
+      function showToast(msg) {
+        el.toast.textContent = msg;
+        el.toast.classList.remove('opacity-0');
+        el.toast.classList.add('opacity-100');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          el.toast.classList.remove('opacity-100');
+          el.toast.classList.add('opacity-0');
+        }, 2500);
+      }
+
+      function openDialog({ title, message, showInput = false, defaultValue = '', okText = 'OK', okColor = 'bg-sky-600 hover:bg-sky-500' }) {
+        return new Promise((resolve) => {
+          el.dialogTitle.textContent = title;
+          el.dialogMessage.textContent = message;
+          el.btnDialogOk.textContent = okText;
+          el.btnDialogOk.className = `px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white transition ${okColor}`;
+
+          if (showInput) {
+            el.dialogInput.classList.remove('hidden');
+            el.dialogInput.value = defaultValue;
+            setTimeout(() => el.dialogInput.focus(), 50);
+          } else {
+            el.dialogInput.classList.add('hidden');
+          }
+
+          el.dialogModal.classList.remove('hidden');
+
+          const cleanup = (result) => {
+            el.dialogModal.classList.add('hidden');
+            el.btnDialogOk.removeEventListener('click', onOk);
+            el.btnDialogCancel.removeEventListener('click', onCancel);
+            resolve(result);
+          };
+
+          const onOk = () => cleanup(showInput ? el.dialogInput.value : true);
+          const onCancel = () => cleanup(null);
+
+          el.btnDialogOk.addEventListener('click', onOk);
+          el.btnDialogCancel.addEventListener('click', onCancel);
+        });
+      }
+
+      // --- 設定の保存・読み込み ---
+      function saveConfig() {
+        try {
+          const payload = {
+            presets: state.presets,
+            savedPatterns: state.savedPatterns,
+            selectedPresetIdx: state.selectedPresetIdx,
+            patternEnabled: state.patternEnabled,
+            loopPattern: state.loopPattern,
+            patternInput: state.patternInput,
+            selectedPatternName: state.selectedPatternName,
+            soundMode: state.soundMode,
+            customAlarmData: state.customAlarmData,
+            customAlarmName: state.customAlarmName,
+            chimeEnabled: state.chimeEnabled,
+            halfChimeMode: state.halfChimeMode,
+            customHalfData: state.customHalfData,
+            customHalfName: state.customHalfName,
+            hourlyChimeMode: state.hourlyChimeMode,
+            preChimeEnabled: state.preChimeEnabled,
+            selectedVoice: state.selectedVoice,
+            compactMode: state.compactMode
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        } catch {
+          showToast('設定の保存容量を超えました（音声ファイルが大きすぎる可能性があります）');
+        }
+      }
+
+      function loadConfig() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.presets) && data.presets.length === 4) {
+            state.presets = data.presets.map(v => Math.max(1, Math.min(60, parseInt(v, 10) || 5)));
+          }
+          if (data.savedPatterns && typeof data.savedPatterns === 'object') {
+            state.savedPatterns = data.savedPatterns;
+          }
+          if (typeof data.selectedPresetIdx === 'number' && data.selectedPresetIdx >= 0 && data.selectedPresetIdx < 4) {
+            state.selectedPresetIdx = data.selectedPresetIdx;
+          }
+          if (typeof data.patternEnabled === 'boolean') state.patternEnabled = data.patternEnabled;
+          if (typeof data.loopPattern === 'boolean') state.loopPattern = data.loopPattern;
+          if (typeof data.patternInput === 'string') state.patternInput = data.patternInput;
+          if (typeof data.selectedPatternName === 'string') state.selectedPatternName = data.selectedPatternName;
+          if (data.soundMode) state.soundMode = data.soundMode;
+          if (typeof data.customAlarmData === 'string') state.customAlarmData = data.customAlarmData;
+          if (typeof data.customAlarmName === 'string') state.customAlarmName = data.customAlarmName;
+          if (typeof data.chimeEnabled === 'boolean') state.chimeEnabled = data.chimeEnabled;
+          if (data.halfChimeMode) state.halfChimeMode = data.halfChimeMode;
+          if (typeof data.customHalfData === 'string') state.customHalfData = data.customHalfData;
+          if (typeof data.customHalfName === 'string') state.customHalfName = data.customHalfName;
+          if (data.hourlyChimeMode) state.hourlyChimeMode = data.hourlyChimeMode;
+          if (typeof data.preChimeEnabled === 'boolean') state.preChimeEnabled = data.preChimeEnabled;
+          if (typeof data.selectedVoice === 'string') state.selectedVoice = data.selectedVoice;
+          if (typeof data.compactMode === 'boolean') state.compactMode = data.compactMode;
+        } catch {
+          // 無視してデフォルト値を使用
+        }
+      }
+
+      // --- UI更新関数 ---
+      function formatTime(totalSec) {
+        const s = Math.max(0, Math.floor(totalSec));
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+
+      function updateTimeDisplay() {
+        const str = formatTime(state.remainingSeconds);
+        el.labelTime.textContent = str;
+        const total = Math.max(1, state.targetTotalSeconds || state.selectedSeconds || 1);
+        const pct = Math.max(0, Math.min(100, (state.remainingSeconds / total) * 100));
+        el.progressBar.style.width = `${pct}%`;
+        if (state.isRunning) {
+          document.title = `${str} - ポモドーロタイマー`;
+        } else {
+          document.title = '時報 ＆ パターン対応ポモドーロタイマー';
+        }
+      }
+
+      function updatePresetButtons() {
+        el.presetBtns.forEach((btn, idx) => {
+          btn.textContent = `${SYMBOLS[idx]} ${state.presets[idx]}分`;
+          if (idx === state.selectedPresetIdx) {
+            btn.classList.remove('bg-slate-700', 'text-slate-100', 'hover:bg-slate-600');
+            btn.classList.add('bg-sky-600', 'text-white');
+          } else {
+            btn.classList.add('bg-slate-700', 'text-slate-100', 'hover:bg-slate-600');
+            btn.classList.remove('bg-sky-600', 'text-white');
+          }
+        });
+      }
+
+      function updateActivePresetLabel() {
+        const idx = state.selectedPresetIdx;
+        const prefix = state.isRunning ? '⚙ 実行中' : '▶ 選択中';
+        el.labelActivePreset.textContent = `${prefix}: ボタン${SYMBOLS[idx]} (${state.presets[idx]}分)`;
+        el.labelActivePreset.className = state.isRunning ? 'font-bold text-emerald-400' : 'font-bold text-sky-400';
+      }
+
+      function setStatusUI(text, dotColorClass, textColorClass) {
+        el.labelStatus.textContent = text;
+        el.labelStatus.className = `text-sm font-bold truncate ${textColorClass}`;
+        el.statusDot.className = `w-2.5 h-2.5 rounded-full shrink-0 ${dotColorClass}`;
+      }
+
+      function updateStartButtonsUI() {
+        const isRun = state.isRunning;
+        const label = isRun ? '❚❚ 一時停止' : '▶ スタート';
+        const addCls = isRun ? ['bg-amber-600', 'hover:bg-amber-500'] : ['bg-emerald-600', 'hover:bg-emerald-500'];
+        const remCls = isRun ? ['bg-emerald-600', 'hover:bg-emerald-500'] : ['bg-amber-600', 'hover:bg-amber-500'];
+
+        [el.btnStart, el.btnCompactStart].forEach(btn => {
+          btn.textContent = label;
+          btn.classList.remove(...remCls);
+          btn.classList.add(...addCls);
+        });
+      }
+
+      function updatePatternCombo() {
+        const keys = Object.keys(state.savedPatterns);
+        el.comboPatterns.innerHTML = '';
+        if (keys.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'なし';
+          el.comboPatterns.appendChild(opt);
+        } else {
+          keys.forEach(k => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = k;
+            el.comboPatterns.appendChild(opt);
+          });
+          if (keys.includes(state.selectedPatternName)) {
+            el.comboPatterns.value = state.selectedPatternName;
+          } else {
+            state.selectedPatternName = keys[0];
+            el.comboPatterns.value = keys[0];
+          }
+        }
+      }
+
+      function syncControlsDisabledState() {
+        const active = !state.isRunning;
+        el.presetBtns.forEach(b => { b.disabled = !active; });
+        el.sliderMinutes.disabled = !active;
+        el.btnSavePreset.disabled = !active;
+        el.chkPattern.disabled = !active;
+        el.chkLoop.disabled = !active;
+
+        const patActive = active && state.patternEnabled;
+        el.entryPattern.disabled = !patActive;
+        el.comboPatterns.disabled = !patActive;
+        el.btnDeletePattern.disabled = !patActive;
+        el.btnSavePattern.disabled = !patActive;
+      }
+
+      function applyViewMode() {
+        if (state.compactMode) {
+          el.fullControls.classList.add('hidden');
+          el.compactControls.classList.remove('hidden');
+          el.btnToggleCompact.textContent = '⬛ フル表示';
+        } else {
+          el.fullControls.classList.remove('hidden');
+          el.compactControls.classList.add('hidden');
+          el.btnToggleCompact.textContent = '◼ ミニ表示';
+        }
+      }
+
+      function updateChimeBadge() {
+        el.labelChimeStatus.textContent = state.chimeEnabled ? '🔔 時報ON' : '🔕 時報OFF';
+        el.labelChimeStatus.className = state.chimeEnabled ? 'text-sky-400 font-semibold' : 'text-slate-500 font-medium';
+      }
+
+      // --- パターン文字列解析 ---
+      function parsePatternString(raw) {
+        const map = {
+          '０': '0', '１': '1', '２': '2', '３': '3', '４': '4',
+          '５': '5', '６': '6', '７': '7', '８': '8', '９': '9',
+          '①': '1', '②': '2', '③': '3', '④': '4',
+          '、': ',', '，': ','
+        };
+        const normalized = raw.replace(/[０-９①②③④、，]/g, ch => map[ch] || ch);
+        return normalized
+          .replace(/,/g, ' ')
+          .split(/\s+/)
+          .map(x => parseInt(x, 10))
+          .filter(n => !Number.isNaN(n) && n >= 1 && n <= 4)
+          .map(n => n - 1);
+      }
+
+      // --- タイマーロジック ---
+      function setTimerMinutes(minutes) {
+        const m = Math.max(1, Math.min(60, minutes));
+        el.sliderMinutes.value = String(m);
+        el.sliderValueLabel.textContent = `${m}分`;
+        state.selectedSeconds = m * 60;
+        state.remainingSeconds = m * 60;
+        state.targetTotalSeconds = m * 60;
+        updateTimeDisplay();
+      }
+
+      function loadCurrentPatternStep() {
+        const idx = state.patternSequence[state.currentStepIdx];
+        state.selectedPresetIdx = idx;
+        const mins = state.presets[idx];
+        state.selectedSeconds = mins * 60;
+        state.remainingSeconds = mins * 60;
+        state.targetTotalSeconds = mins * 60;
+        state.endTimestamp = Date.now() + state.remainingSeconds * 1000;
+        updatePresetButtons();
+        updateActivePresetLabel();
+        updateTimeDisplay();
+        setStatusUI(
+          `パターン進行中 [${state.currentStepIdx + 1}/${state.patternSequence.length}]`,
+          'bg-emerald-400 animate-pulse',
+          'text-emerald-400'
+        );
+      }
+
+      function advancePatternStep() {
+        state.currentStepIdx += 1;
+        if (state.currentStepIdx >= state.patternSequence.length) {
+          if (state.loopPattern) {
+            state.currentStepIdx = 0;
+            loadCurrentPatternStep();
+            state.isRunning = true;
+          } else {
+            state.isRunning = false;
+            state.isPaused = false;
+            setStatusUI('パターン再生完了', 'bg-sky-400', 'text-sky-400');
+            updateStartButtonsUI();
+            updateActivePresetLabel();
+            syncControlsDisabledState();
+          }
+        } else {
+          loadCurrentPatternStep();
+          state.isRunning = true;
+        }
+      }
+
+      async function toggleTimer() {
+        ensureAudioContext();
+        if (state.isRunning) {
+          state.remainingSeconds = Math.max(0, Math.ceil((state.endTimestamp - Date.now()) / 1000));
+          state.isRunning = false;
+          state.isPaused = true;
+          setStatusUI('一時停止中', 'bg-amber-400', 'text-amber-400');
+          updateStartButtonsUI();
+          updateActivePresetLabel();
+          syncControlsDisabledState();
+          updateTimeDisplay();
+          return;
+        }
+
+        const resuming = state.isPaused && state.remainingSeconds > 0;
+        state.isPaused = false;
+
+        if (!resuming) {
+          if (state.patternEnabled) {
+            const seq = parsePatternString(el.entryPattern.value);
+            if (seq.length === 0) {
+              await openDialog({
+                title: 'エラー',
+                message: '有効なパターンが指定されていません。（1〜4の数字をカンマやスペース区切りで入力してください）',
+                okText: '閉じる'
+              });
+              return;
+            }
+            state.patternSequence = seq;
+            state.currentStepIdx = 0;
+            loadCurrentPatternStep();
+          } else {
+            if (state.remainingSeconds <= 0) {
+              state.remainingSeconds = state.selectedSeconds;
+              state.targetTotalSeconds = state.selectedSeconds;
+            }
+          }
+        }
+
+        if (state.remainingSeconds > 0) {
+          state.isRunning = true;
+          state.endTimestamp = Date.now() + state.remainingSeconds * 1000;
+          if (!state.patternEnabled) {
+            setStatusUI('タイマー実行中', 'bg-emerald-400 animate-pulse', 'text-emerald-400');
+          } else {
+            setStatusUI(
+              `パターン進行中 [${state.currentStepIdx + 1}/${state.patternSequence.length}]`,
+              'bg-emerald-400 animate-pulse',
+              'text-emerald-400'
+            );
+          }
+          updateStartButtonsUI();
+          updateActivePresetLabel();
+          syncControlsDisabledState();
+          updateTimeDisplay();
+        }
+      }
+
+      function resetTimer() {
+        state.isRunning = false;
+        state.isPaused = false;
+        state.remainingSeconds = state.selectedSeconds;
+        state.targetTotalSeconds = state.selectedSeconds;
+        setStatusUI('停止中', 'bg-slate-400', 'text-slate-400');
+        updateStartButtonsUI();
+        updateActivePresetLabel();
+        syncControlsDisabledState();
+        updateTimeDisplay();
+      }
+
+      // --- メイン監視ループ ---
+      function mainTick() {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        el.labelCurrentClock.textContent = `現在時刻 ${hh}:${mm}:${ss}`;
+
+        if (state.chimeEnabled) {
+          const curHour = now.getHours();
+          const curMin = now.getMinutes();
+          if (curMin === 0 && state.lastCheckedHour !== curHour) {
+            state.lastCheckedHour = curHour;
+            playTimeSignal(curHour);
+          }
+          if (curMin === 30 && state.lastCheckedHalfHour !== curHour) {
+            state.lastCheckedHalfHour = curHour;
+            playHalfHourChime();
+          }
+        }
+
+        if (state.isRunning) {
+          const calcRem = Math.ceil((state.endTimestamp - Date.now()) / 1000);
+          if (calcRem > 0) {
+            if (calcRem !== state.remainingSeconds) {
+              state.remainingSeconds = calcRem;
+              updateTimeDisplay();
+            }
+          } else {
+            state.remainingSeconds = 0;
+            updateTimeDisplay();
+            playAlarm();
+            state.isPaused = false;
+            if (state.patternEnabled) {
+              advancePatternStep();
+            } else {
+              state.isRunning = false;
+              setStatusUI('タイマー終了', 'bg-sky-400', 'text-sky-400');
+              updateStartButtonsUI();
+              updateActivePresetLabel();
+              syncControlsDisabledState();
+            }
+          }
+        }
+      }
+
+      // --- ボイス一覧取得 ---
+      function populateVoices() {
+        el.selectVoice.innerHTML = '';
+        if (!('speechSynthesis' in window)) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '標準音声（TTS非対応）';
+          el.selectVoice.appendChild(opt);
+          return;
+        }
+        const voices = window.speechSynthesis.getVoices();
+        const jaVoices = voices.filter(v => v.lang.startsWith('ja'));
+        const list = jaVoices.length > 0 ? jaVoices : voices;
+
+        if (list.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '標準音声';
+          el.selectVoice.appendChild(opt);
+          return;
+        }
+        list.forEach(v => {
+          const label = `${v.name} (${v.lang})`;
+          const opt = document.createElement('option');
+          opt.value = label;
+          opt.textContent = label;
+          el.selectVoice.appendChild(opt);
+        });
+        if (state.selectedVoice && Array.from(el.selectVoice.options).some(o => o.value === state.selectedVoice)) {
+          el.selectVoice.value = state.selectedVoice;
+        } else {
+          state.selectedVoice = el.selectVoice.options[0].value;
+          el.selectVoice.value = state.selectedVoice;
+        }
+      }
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = populateVoices;
+      }
+
+      // --- イベント登録 ---
+      el.btnStart.addEventListener('click', toggleTimer);
+      el.btnCompactStart.addEventListener('click', toggleTimer);
+      el.btnReset.addEventListener('click', resetTimer);
+      el.btnCompactReset.addEventListener('click', resetTimer);
+
+      el.btnToggleCompact.addEventListener('click', () => {
+        state.compactMode = !state.compactMode;
+        applyViewMode();
+        saveConfig();
+      });
+
+      el.btnWakeLock.addEventListener('click', () => {
+        if (wakeLockDesired) {
+          releaseWakeLock();
+        } else {
+          wakeLockDesired = true;
+          requestWakeLock();
+        }
+      });
+
+      // プリセットボタン（タップ＆長押し）
+      el.presetBtns.forEach((btn, idx) => {
+        let pressTimer = null;
+        let longPressed = false;
+
+        const startPress = () => {
+          if (state.isRunning) return;
+          longPressed = false;
+          clearTimeout(pressTimer);
+          pressTimer = setTimeout(() => {
+            longPressed = true;
+            const mins = parseInt(el.sliderMinutes.value, 10) || 5;
+            state.presets[idx] = mins;
+            state.selectedPresetIdx = idx;
+            updatePresetButtons();
+            updateActivePresetLabel();
+            saveConfig();
+            playTone(1800, 100, 0, 'sine', 0.2);
+            showToast(`ボタン${SYMBOLS[idx]}に ${mins}分 を登録しました`);
+          }, 480);
+        };
+
+        const cancelPress = () => {
+          clearTimeout(pressTimer);
+        };
+
+        btn.addEventListener('pointerdown', startPress);
+        btn.addEventListener('pointerup', cancelPress);
+        btn.addEventListener('pointerleave', cancelPress);
+        btn.addEventListener('pointercancel', cancelPress);
+
+        btn.addEventListener('click', () => {
+          if (longPressed || state.isRunning) {
+            longPressed = false;
+            return;
+          }
+          if (state.patternEnabled) {
+            const cur = el.entryPattern.value.trim();
+            el.entryPattern.value = cur ? `${cur}, ${idx + 1}` : String(idx + 1);
+            state.patternInput = el.entryPattern.value;
+            saveConfig();
+          } else {
+            state.selectedPresetIdx = idx;
+            setTimerMinutes(state.presets[idx]);
+            updatePresetButtons();
+            updateActivePresetLabel();
+            saveConfig();
+          }
+        });
+      });
+
+      el.sliderMinutes.addEventListener('input', () => {
+        if (state.isRunning) return;
+        const mins = parseInt(el.sliderMinutes.value, 10) || 5;
+        setTimerMinutes(mins);
+      });
+
+      el.btnSavePreset.addEventListener('click', () => {
+        if (state.isRunning) return;
+        const mins = parseInt(el.sliderMinutes.value, 10) || 5;
+        state.presets[state.selectedPresetIdx] = mins;
+        updatePresetButtons();
+        updateActivePresetLabel();
+        saveConfig();
+        playTone(1800, 100, 0, 'sine', 0.2);
+        showToast(`ボタン${SYMBOLS[state.selectedPresetIdx]}に ${mins}分 をセットしました`);
+      });
+
+      el.chkPattern.addEventListener('change', () => {
+        state.patternEnabled = el.chkPattern.checked;
+        syncControlsDisabledState();
+        saveConfig();
+      });
+
+      el.chkLoop.addEventListener('change', () => {
+        state.loopPattern = el.chkLoop.checked;
+        saveConfig();
+      });
+
+      el.entryPattern.addEventListener('input', () => {
+        state.patternInput = el.entryPattern.value;
+        saveConfig();
+      });
+
+      el.comboPatterns.addEventListener('change', () => {
+        const name = el.comboPatterns.value;
+        state.selectedPatternName = name;
+        const data = state.savedPatterns[name];
+        if (data) {
+          el.entryPattern.value = data.sequence || '';
+          state.patternInput = el.entryPattern.value;
+          if (Array.isArray(data.snapshot_presets) && data.snapshot_presets.length === 4) {
+            state.presets = [...data.snapshot_presets];
+            updatePresetButtons();
+            setTimerMinutes(state.presets[state.selectedPresetIdx]);
+            updateActivePresetLabel();
+          }
+          saveConfig();
+        }
+      });
+
+      el.btnSavePattern.addEventListener('click', async () => {
+        const patternStr = el.entryPattern.value.trim();
+        if (!patternStr) {
+          await openDialog({ title: '警告', message: 'パターンが入力されていません。', okText: '閉じる' });
+          return;
+        }
+        const name = await openDialog({
+          title: 'パターンの保存',
+          message: 'パターン名を入力してください:',
+          showInput: true,
+          defaultValue: el.comboPatterns.value || 'マイパターン',
+          okText: '保存'
+        });
+        if (!name || !name.trim()) return;
+        const trimmed = name.trim();
+        if (state.savedPatterns[trimmed]) {
+          const confirmOverwrite = await openDialog({
+            title: '確認',
+            message: `「${trimmed}」を上書きしますか？`,
+            okText: '上書きする',
+            okColor: 'bg-amber-600 hover:bg-amber-500'
+          });
+          if (!confirmOverwrite) return;
+        }
+        state.savedPatterns[trimmed] = {
+          sequence: patternStr,
+          snapshot_presets: [...state.presets]
+        };
+        state.selectedPatternName = trimmed;
+        saveConfig();
+        updatePatternCombo();
+        showToast(`パターン「${trimmed}」を保存しました`);
+      });
+
+      el.btnDeletePattern.addEventListener('click', async () => {
+        const name = el.comboPatterns.value;
+        if (!name || !state.savedPatterns[name]) {
+          await openDialog({ title: '警告', message: '削除するパターンを選択してください。', okText: '閉じる' });
+          return;
+        }
+        const ok = await openDialog({
+          title: '削除確認',
+          message: `パターン「${name}」を削除しますか？`,
+          okText: '削除する',
+          okColor: 'bg-rose-600 hover:bg-rose-500'
+        });
+        if (!ok) return;
+        delete state.savedPatterns[name];
+        state.selectedPatternName = '';
+        el.entryPattern.value = '';
+        state.patternInput = '';
+        saveConfig();
+        updatePatternCombo();
+        showToast(`パターン「${name}」を削除しました`);
+      });
+
+      // --- 設定モーダル制御 ---
+      function openSettings() {
+        populateVoices();
+        document.querySelectorAll('input[name="soundMode"]').forEach(r => { r.checked = (r.value === state.soundMode); });
+        document.querySelectorAll('input[name="halfChimeMode"]').forEach(r => { r.checked = (r.value === state.halfChimeMode); });
+        document.querySelectorAll('input[name="hourlyChimeMode"]').forEach(r => { r.checked = (r.value === state.hourlyChimeMode); });
+        el.chkChimeEnabled.checked = state.chimeEnabled;
+        el.chkPreChime.checked = state.preChimeEnabled;
+        el.labelAlarmFileName.textContent = state.customAlarmName || '未選択';
+        el.labelHalfFileName.textContent = state.customHalfName || '未選択';
+        el.settingsModal.classList.remove('hidden');
+      }
+
+      function closeSettings() {
+        el.settingsModal.classList.add('hidden');
+      }
+
+      el.btnSettings.addEventListener('click', openSettings);
+      el.btnCloseSettings.addEventListener('click', closeSettings);
+      el.btnCloseSettingsTop.addEventListener('click', closeSettings);
+
+      document.querySelectorAll('input[name="soundMode"]').forEach(r => {
+        r.addEventListener('change', () => { state.soundMode = r.value; saveConfig(); });
+      });
+      document.querySelectorAll('input[name="halfChimeMode"]').forEach(r => {
+        r.addEventListener('change', () => { state.halfChimeMode = r.value; saveConfig(); });
+      });
+      document.querySelectorAll('input[name="hourlyChimeMode"]').forEach(r => {
+        r.addEventListener('change', () => { state.hourlyChimeMode = r.value; saveConfig(); });
+      });
+
+      el.chkChimeEnabled.addEventListener('change', () => {
+        state.chimeEnabled = el.chkChimeEnabled.checked;
+        updateChimeBadge();
+        saveConfig();
+      });
+
+      el.chkPreChime.addEventListener('change', () => {
+        state.preChimeEnabled = el.chkPreChime.checked;
+        saveConfig();
+      });
+
+      el.selectVoice.addEventListener('change', () => {
+        state.selectedVoice = el.selectVoice.value;
+        saveConfig();
+      });
+
+      function handleAudioUpload(fileInput, onLoaded) {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          onLoaded(reader.result, file.name);
+        };
+        reader.readAsDataURL(file);
+      }
+
+      el.btnSelectAlarmFile.addEventListener('click', () => el.inputAlarmFile.click());
+      el.inputAlarmFile.addEventListener('change', () => {
+        handleAudioUpload(el.inputAlarmFile, (dataUrl, name) => {
+          state.customAlarmData = dataUrl;
+          state.customAlarmName = name;
+          state.soundMode = 'file';
+          document.querySelectorAll('input[name="soundMode"]').forEach(r => { r.checked = (r.value === 'file'); });
+          el.labelAlarmFileName.textContent = name;
+          saveConfig();
+          showToast(`終了音「${name}」を設定しました`);
+        });
+      });
+
+      el.btnSelectHalfFile.addEventListener('click', () => el.inputHalfFile.click());
+      el.inputHalfFile.addEventListener('change', () => {
+        handleAudioUpload(el.inputHalfFile, (dataUrl, name) => {
+          state.customHalfData = dataUrl;
+          state.customHalfName = name;
+          state.halfChimeMode = 'file';
+          document.querySelectorAll('input[name="halfChimeMode"]').forEach(r => { r.checked = (r.value === 'file'); });
+          el.labelHalfFileName.textContent = name;
+          saveConfig();
+          showToast(`30分時報「${name}」を設定しました`);
+        });
+      });
+
+      el.btnTestAlarm.addEventListener('click', () => {
+        ensureAudioContext();
+        playAlarm();
+      });
+      el.btnTestHalfChime.addEventListener('click', () => {
+        ensureAudioContext();
+        playHalfHourChime();
+      });
+      el.btnTestHourlyChime.addEventListener('click', () => {
+        ensureAudioContext();
+        playTimeSignal(new Date().getHours());
+      });
+
+      // --- 初期化 ---
+      loadConfig();
+      el.chkPattern.checked = state.patternEnabled;
+      el.chkLoop.checked = state.loopPattern;
+      el.entryPattern.value = state.patternInput;
+      updatePatternCombo();
+      updatePresetButtons();
+      setTimerMinutes(state.presets[state.selectedPresetIdx]);
+      updateActivePresetLabel();
+      updateChimeBadge();
+      applyViewMode();
+      syncControlsDisabledState();
+      populateVoices();
+      mainTick();
+      setInterval(mainTick, 250);
+    })();
+  </script>
+</body>
+</html>
